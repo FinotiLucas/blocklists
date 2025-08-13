@@ -1,4 +1,5 @@
 import axios, { AxiosInstance, AxiosResponse } from 'axios'
+import { Readable } from 'node:stream'
 
 /**
  * Interface para opções de configuração do HttpClient.
@@ -12,7 +13,7 @@ interface HttpClientOptions {
 /**
  * Cliente HTTP para realizar requisições com tratamento de erros.
  */
-class HttpClient {
+export default class HttpClient {
   private readonly axiosInstance: AxiosInstance
   private readonly retries: number
   private readonly retryDelay: number
@@ -23,24 +24,35 @@ class HttpClient {
    */
   constructor(options: HttpClientOptions = {}) {
     this.axiosInstance = axios.create({
-      timeout: options.timeout ?? 10000,
+      timeout: options.timeout ?? 60000, // Default to 60 seconds
+      headers: {
+        Accept: 'text/plain',
+      },
     })
-    this.retries = options.retries ?? 3
-    this.retryDelay = options.retryDelay ?? 1000
+    this.retries = options.retries ?? 5 // Increased retries
+    this.retryDelay = options.retryDelay ?? 2000 // Increased delay
   }
 
   /**
    * Realiza uma requisição GET com retries automáticos.
    * @param url - URL da requisição.
-   * @returns Resposta da requisição ou string vazia em caso de erro.
-   * @throws Error se todas as tentativas falharem.
+   * @param options - Opções de configuração, incluindo responseType.
+   * @returns Resposta da requisição ou null em caso de erro.
    */
-  public async get(url: string): Promise<string> {
+  public async get(
+    url: string,
+    options: { responseType?: 'stream' | 'text' } = {}
+  ): Promise<AxiosResponse<string | Readable> | null> {
     for (let attempt = 1; attempt <= this.retries; attempt++) {
       try {
-        const response: AxiosResponse<string> = await this.axiosInstance.get(url)
+        const response = await this.axiosInstance.get<string | Readable>(url, {
+          responseType: options.responseType ?? 'text',
+          headers: {
+            Accept: 'text/plain',
+          },
+        })
         console.log(`[HttpClient] Sucesso: ${url} (Tentativa ${attempt})`)
-        return response.data
+        return response
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido'
         const isLastAttempt = attempt === this.retries
@@ -55,12 +67,10 @@ class HttpClient {
         }
 
         console.error(`[HttpClient] Falha após ${this.retries} tentativas: ${url}`)
-        return ''
+        return null // Return null instead of invalid Readable
       }
     }
 
-    return ''
+    return null
   }
 }
-
-export default HttpClient
